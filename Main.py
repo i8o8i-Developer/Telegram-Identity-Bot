@@ -46,12 +46,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("📦 Export JSON", callback_data="export")],
         [InlineKeyboardButton("ℹ️ User Info", callback_data="userinfo")],
         [InlineKeyboardButton("🆘 Help", callback_data="help")],
+        [InlineKeyboardButton("🧵 Topic ID", callback_data="topicid")],
     ])
     text = (
         "Hi! I Can Show IDs And Chat Info.\n\n"
         "Commands :\n"
         "/id – Your ID\n"
         "/chatid – This Chat's/Group's ID\n"
+        "/topicid – Get The Topic ID In This Thread\n"
         "/members – Member Count\n"
         "/admins – List Admins\n"
         "/export – Export Chat Info As JSON\n"
@@ -68,6 +70,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help – Show This Help\n"
         "/id – Your Telegram ID\n"
         "/chatid – This Chat's/Group's ID\n"
+        "/topicid – Get The Topic ID In This Thread\n"
         "/members – Member Count\n"
         "/admins – List Chat/Group Admins\n"
         "/export – Export Chat Info As JSON\n"
@@ -87,6 +90,23 @@ async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(
         f"Chat ID : <code>{c.id}</code>\nType: {c.type}", parse_mode="HTML"
     )
+
+async def cmd_topicid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    chat = update.effective_chat
+
+    if chat.type in ["supergroup", "group"]:
+        if msg.is_topic_message: 
+            thread_id = msg.message_thread_id
+            await msg.reply_text(
+                f"🧵 This Topic's ID : <code>{thread_id}</code>",
+                parse_mode="HTML",
+            )
+        else:
+            await msg.reply_text("⚠️ This Chat Has No Topic ID (Not In A Thread).")
+    else:
+        await msg.reply_text("⚠️ This command Only Works In SuperGroups With Topics Enabled.")
+
 
 async def cmd_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -201,6 +221,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await cmd_userinfo(update, context)
     elif data == "help":
         await help_cmd(update, context)
+    elif data == "topicid":
+        await cmd_topicid(update, context)
+
 
 # ---------- FastAPI Routes ----------
 @app.get("/", response_class=PlainTextResponse)
@@ -219,6 +242,7 @@ async def on_startup():
     application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CommandHandler("id", cmd_id))
     application.add_handler(CommandHandler("chatid", cmd_chatid))
+    application.add_handler(CommandHandler("topicid", cmd_topicid))
     application.add_handler(CommandHandler("members", cmd_members))
     application.add_handler(CommandHandler("admins", cmd_admins))
     application.add_handler(CommandHandler("export", cmd_export))
