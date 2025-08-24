@@ -28,7 +28,7 @@ log = logging.getLogger("Tg-Id-Bot")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError(
-        "❌ TELEGRAM_BOT_TOKEN is missing. Please set it in Cloud Run environment variables or Secret Manager."
+        "❌ TELEGRAM_BOT_TOKEN Is Missing. Please Set It In Cloud Run Environment Variables Or Secret Manager."
     )
 
 # ---------- FastAPI ----------
