@@ -1,6 +1,32 @@
+# FastAPI and server dependencies
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-python-telegram-bot==21.6
-httpx==0.27.2
 gunicorn==22.0.0
+
+# Telegram bot library
+python-telegram-bot==21.6
+
+# HTTP client for external requests
+httpx==0.27.2
+
+# System monitoring and utilities
 psutil==6.0.0
+
+# Production logging and monitoring
+structlog==24.4.0
+prometheus-client==0.21.0
+
+# Environment and configuration
+python-dotenv==1.0.1
+
+# Security and validation
+pydantic==2.9.2
+cryptography==43.0.1
+
+# Production optimizations
+orjson==3.10.7
+lxml==5.3.0
+
+# Development and debugging (optional)
+pytest==8.3.3
+pytest-asyncio==0.24.0
