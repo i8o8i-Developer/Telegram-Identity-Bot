@@ -645,12 +645,18 @@ async def lifespan(app: FastAPI):
         # Startup
         log.info("🚀 Starting Telegram ID Bot...")
         
-        # Initialize Bot Application With Better Configuration
+        from telegram.request import Request as TgRequest
+
+        tg_request = TgRequest(
+            connect_timeout=REQUEST_TIMEOUT,
+            read_timeout=REQUEST_TIMEOUT,
+            con_pool_size=4,
+        )
+
         application = (
             ApplicationBuilder()
             .token(BOT_TOKEN)
-            .request_timeout(REQUEST_TIMEOUT)
-            .get_updates_request_timeout(42)
+            .request(tg_request)
             .build()
         )
         
