@@ -33,4 +33,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 3000
 
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://127.0.0.1:3000/healthz || exit 1
+
 CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:3000", "Main:app"]
