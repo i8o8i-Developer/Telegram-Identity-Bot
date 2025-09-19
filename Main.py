@@ -89,7 +89,13 @@ shutdown_event = asyncio.Event()
 def signal_handler(signum, frame):
     """Handle Shutdown Signals Gracefully"""
     log.info(f"Received Signal {signum}, Initiating Graceful Shutdown...")
-    asyncio.create_task(shutdown_event.set())
+    # Event.set() is not awaitable — call it directly to notify the app
+    try:
+        shutdown_event.set()
+    except Exception:
+        # In rare contexts signal handlers may run outside the running loop;
+        # swallow errors here and rely on FastAPI shutdown sequence.
+        pass
 
 # Register Signal Handlers
 signal.signal(signal.SIGTERM, signal_handler)
@@ -650,15 +656,19 @@ async def lifespan(app: FastAPI):
         
         # Register Handlers
         register_handlers(application)
-        
-        # Start Bot
-        await application.initialize()
-        await application.start()
-        
-        # Start Polling In Background
-        polling_task = asyncio.create_task(start_polling())
-        
-        log.info("✅ Bot Started Successfully In Polling Mode")
+        polling_task = asyncio.create_task(
+            application.run_polling(
+                poll_interval=1.0,
+                timeout=20,
+                bootstrap_retries=MAX_RETRIES,
+                read_timeout=30,
+                write_timeout=30,
+                connect_timeout=30,
+                pool_timeout=30,
+            )
+        )
+
+        log.info("✅ Bot Started Successfully In Polling Mode (Background [run_polling])")
         
         yield
         
@@ -670,31 +680,17 @@ async def lifespan(app: FastAPI):
         log.info("🛑 Shutting Down Bot...")
         if application:
             try:
-                await application.updater.stop()
+                try:
+                    polling_task.cancel()
+                    await polling_task
+                except Exception:
+                    pass
+
                 await application.stop()
                 await application.shutdown()
                 log.info("✅ Bot Shutdown Completed")
             except Exception as e:
                 log.error(f"❌ Error During Shutdown: {e}")
-
-async def start_polling():
-    """Start Polling With Error Handling"""
-    global application
-    try:
-        await application.updater.start_polling(
-            poll_interval=1.0,
-            timeout=20,
-            bootstrap_retries=MAX_RETRIES,
-            read_timeout=30,
-            write_timeout=30,
-            connect_timeout=30,
-            pool_timeout=30,
-        )
-        # Wait For Shutdown Signal
-        await shutdown_event.wait()
-    except Exception as e:
-        log.error(f"❌ Polling Error: {e}")
-        raise
 
 # ---------- FastAPI Application ----------
 app = FastAPI(
@@ -729,7 +725,6 @@ async def health():
         raise HTTPException(status_code=503, detail="Bot Not Initialized")
     
     try:
-        # Simple health check
         me = await application.bot.get_me()
         return {
             "status": "healthy",
