@@ -88,17 +88,16 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 # ---------- Global State ----------
 application: Optional[Application] = None
 shutdown_event = asyncio.Event()
+polling_task: Optional[asyncio.Task] = None
 
 # ---------- Graceful Shutdown Handler ----------
 def signal_handler(signum, frame):
     """Handle Shutdown Signals Gracefully"""
     log.info(f"Received Signal {signum}, Initiating Graceful Shutdown...")
-    # Event.set() is not awaitable — call it directly to notify the app
+    
     try:
         shutdown_event.set()
     except Exception:
-        # In rare contexts signal handlers may run outside the running loop;
-        # swallow errors here and rely on FastAPI shutdown sequence.
         pass
 
 # Register Signal Handlers
@@ -148,7 +147,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("🆔 Your ID", callback_data="id"), 
          InlineKeyboardButton("💬 Chat/Group ID", callback_data="chatid")],
         [InlineKeyboardButton("👑 Admins", callback_data="admins"), 
-         InlineKeyboardButton("� Member Count", callback_data="members")],
+         InlineKeyboardButton("👥 Member Count", callback_data="members")],
         [InlineKeyboardButton("🧵 Topic ID", callback_data="topicid"), 
          InlineKeyboardButton("ℹ️ User Info", callback_data="userinfo")],
         [InlineKeyboardButton("📦 Export JSON", callback_data="export"), 
@@ -639,50 +638,65 @@ def register_handlers(app: Application):
     
     log.info(f"✅ Registered {len(handlers)} Handlers")
 
+# ---------- Async Polling Function ----------
+async def run_polling():
+    """Run bot polling in background"""
+    global application, polling_task
+    try:
+        if application:
+            log.info("🔄 Starting Bot Polling...")
+            await application.initialize()
+            await application.start()
+            
+            # Start polling without blocking
+            await application.updater.start_polling(
+                drop_pending_updates=True,
+                allowed_updates=Update.ALL_TYPES
+            )
+            
+            # Keep polling until shutdown
+            while not shutdown_event.is_set():
+                await asyncio.sleep(1)
+                
+    except Exception as e:
+        log.error(f"❌ Polling Error: {e}")
+        raise
+    finally:
+        if application:
+            try:
+                await application.updater.stop()
+                await application.stop()
+                await application.shutdown()
+                log.info("✅ Bot Polling Stopped")
+            except Exception as e:
+                log.error(f"❌ Error Stopping Bot: {e}")
+
 # ---------- Application Lifespan ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage Application LifeSpan With Proper Startup and Shutdown"""
-    global application
+    global application, polling_task
     
     try:
         # Startup
         log.info("🚀 Starting Telegram ID Bot...")
 
-        try:
-            from telegram.request import Request as TgRequest 
-        except Exception:
-            try:
-                from telegram.utils.request import Request as TgRequest  
-            except Exception:
-                TgRequest = None 
-
-        if TgRequest:
-            tg_request = TgRequest(
-                connect_timeout=REQUEST_TIMEOUT,
-                read_timeout=REQUEST_TIMEOUT,
-                con_pool_size=4,
-            )
-
-            application = (
-                ApplicationBuilder()
-                .token(BOT_TOKEN)
-                .request(tg_request)
-                .build()
-            )
-        else:
-            application = (
-                ApplicationBuilder()
-                .token(BOT_TOKEN)
-                .build()
-            )
+        # Create the application
+        application = (
+            ApplicationBuilder()
+            .token(BOT_TOKEN)
+            .connect_timeout(REQUEST_TIMEOUT)
+            .read_timeout(REQUEST_TIMEOUT)
+            .build()
+        )
 
         # Register Handlers
         register_handlers(application)
 
-        polling_task = asyncio.create_task(application.run_polling())
+        # Start polling in background task
+        polling_task = asyncio.create_task(run_polling())
 
-        log.info(f"✅ Bot Started Successfully In Polling Mode (Background [run_polling]) — Listening On Port {PORT}")
+        log.info(f"✅ Bot Started Successfully — Listening On Port {PORT}")
 
         yield
         
@@ -692,19 +706,21 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         log.info("🛑 Shutting Down Bot...")
-        if application:
+        
+        # Signal shutdown
+        shutdown_event.set()
+        
+        # Cancel polling task
+        if polling_task and not polling_task.done():
+            polling_task.cancel()
             try:
-                try:
-                    polling_task.cancel()
-                    await polling_task
-                except Exception:
-                    pass
-
-                await application.stop()
-                await application.shutdown()
-                log.info("✅ Bot Shutdown Completed")
+                await polling_task
+            except asyncio.CancelledError:
+                pass
             except Exception as e:
-                log.error(f"❌ Error During Shutdown: {e}")
+                log.error(f"❌ Error Cancelling Polling Task: {e}")
+        
+        log.info("✅ Bot Shutdown Completed")
 
 # ---------- FastAPI Application ----------
 app = FastAPI(
@@ -753,22 +769,16 @@ async def health():
 @app.get("/metrics")
 async def metrics():
     """Basic Metrics Endpoint For Monitoring"""
-    global application
+    global application, polling_task
     
     if not application:
         return {"error": "Bot Not Initialized"}
 
     try:
-        updater_running = False
-        try:
-            updater_running = bool(getattr(application, "updater", None) and getattr(application.updater, "running", False))
-        except Exception:
-            updater_running = False
-
         return {
             "uptime": time.time(),
-            "bot_running": getattr(application, "running", False),
-            "updater_running": updater_running,
+            "bot_running": bool(application and not application.updater._running),
+            "polling_task_running": bool(polling_task and not polling_task.done()),
             "version": "2.0.0"
         }
     except Exception as e:
