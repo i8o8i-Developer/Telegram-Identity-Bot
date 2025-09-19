@@ -1,0 +1,59 @@
+# Docker Ignore Patterns For Production Build Optimization
+.git
+.gitignore
+README.md
+.env
+.env.*
+.vscode
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.nyc_output
+.grunt
+bower_components
+.lock-wscript
+build/Release
+node_modules/
+jspm_packages/
+*.tgz
+*.tar.gz
+.npm
+.eslintcache
+.node_repl_history
+*.pid
+*.seed
+*.pid.lock
+.DS_Store
+Thumbs.db
+
+# Development Files
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile.dev
+.dockerignore
+
+# Testing
+tests/
+test_*
+*_test.py
+
+# Documentation
+docs/
+*.md
+
+# Local Development
+logs/
+temp/
+tmp/
