@@ -81,6 +81,10 @@ APP_ENV = os.getenv("APP_ENV", "production")
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 
+# Sync with Docker/Coolify defaults
+PORT = int(os.getenv("PORT", "3000"))
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
 # ---------- Global State ----------
 application: Optional[Application] = None
 shutdown_event = asyncio.Event()
@@ -644,38 +648,42 @@ async def lifespan(app: FastAPI):
     try:
         # Startup
         log.info("🚀 Starting Telegram ID Bot...")
-        
-        from telegram.request import Request as TgRequest
 
-        tg_request = TgRequest(
-            connect_timeout=REQUEST_TIMEOUT,
-            read_timeout=REQUEST_TIMEOUT,
-            con_pool_size=4,
-        )
+        try:
+            from telegram.request import Request as TgRequest 
+        except Exception:
+            try:
+                from telegram.utils.request import Request as TgRequest  
+            except Exception:
+                TgRequest = None 
 
-        application = (
-            ApplicationBuilder()
-            .token(BOT_TOKEN)
-            .request(tg_request)
-            .build()
-        )
-        
+        if TgRequest:
+            tg_request = TgRequest(
+                connect_timeout=REQUEST_TIMEOUT,
+                read_timeout=REQUEST_TIMEOUT,
+                con_pool_size=4,
+            )
+
+            application = (
+                ApplicationBuilder()
+                .token(BOT_TOKEN)
+                .request(tg_request)
+                .build()
+            )
+        else:
+            application = (
+                ApplicationBuilder()
+                .token(BOT_TOKEN)
+                .build()
+            )
+
         # Register Handlers
         register_handlers(application)
-        polling_task = asyncio.create_task(
-            application.run_polling(
-                poll_interval=1.0,
-                timeout=20,
-                bootstrap_retries=MAX_RETRIES,
-                read_timeout=30,
-                write_timeout=30,
-                connect_timeout=30,
-                pool_timeout=30,
-            )
-        )
 
-        log.info("✅ Bot Started Successfully In Polling Mode (Background [run_polling])")
-        
+        polling_task = asyncio.create_task(application.run_polling())
+
+        log.info(f"✅ Bot Started Successfully In Polling Mode (Background [run_polling]) — Listening On Port {PORT}")
+
         yield
         
     except Exception as e:
@@ -751,10 +759,16 @@ async def metrics():
         return {"error": "Bot Not Initialized"}
 
     try:
+        updater_running = False
+        try:
+            updater_running = bool(getattr(application, "updater", None) and getattr(application.updater, "running", False))
+        except Exception:
+            updater_running = False
+
         return {
             "uptime": time.time(),
-            "bot_running": application.running,
-            "updater_running": application.updater.running if application.updater else False,
+            "bot_running": getattr(application, "running", False),
+            "updater_running": updater_running,
             "version": "2.0.0"
         }
     except Exception as e:
@@ -784,7 +798,7 @@ async def status():
             "app_info": {
                 "version": "2.0.0",
                 "environment": APP_ENV,
-                "port": 3000,
+                "port": PORT,
                 "maintainer": SIGNATURE,
             },
             "system_info": {
@@ -807,8 +821,8 @@ if __name__ == "__main__":
     uvicorn.run(
         "Main:app",
         host="0.0.0.0",
-        port=3000,
+        port=PORT,
         reload=False,
         workers=1,
-        log_level="info"
+        log_level=LOG_LEVEL.lower()
     )
