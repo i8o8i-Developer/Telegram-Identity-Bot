@@ -4,7 +4,7 @@ A Lightweight Telegram Bot That Helps You Fetch **IDs, Chat Info, User Info, Adm
 It Works With **FastAPI** + **Python-Telegram-Bot** And Is Deployable To **Google Cloud Run**.
 
 👉 Live Demo: [TeleIdentity\_Bot](https://t.me/TeleIdentity_Bot)
-👉 Cloud Run: [Web Service](https://telegramidentitybot.durgaaisolutions.cloud)
+👉 Cloud Run: [Web Service](https://bot.durgaaisolutions.cloud)
 
 ---
 
