@@ -62,16 +62,16 @@ def validate_environment():
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
-        error_msg = f"❌ Missing Required Environment Variables: {', '.join(missing_vars)}"
+        error_msg = f"Missing Required Environment Variables: {', '.join(missing_vars)}"
         log.error(error_msg)
         raise RuntimeError(error_msg)
 
     # Validate Bot Token Format
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token or len(bot_token.split(":")) != 2:
-        raise RuntimeError("❌ Invalid TELEGRAM_BOT_TOKEN Format")
+        raise RuntimeError("Invalid TELEGRAM_BOT_TOKEN Format")
     
-    log.info("✅ Environment Validation Passed")
+    log.info("Environment Validation Passed")
 
 # Validate Environment On Startup
 validate_environment()
@@ -115,7 +115,7 @@ def handle_errors(func):
             try:
                 await update.effective_message.reply_text(
                     f"⚠️ <b>Telegram API Error</b>\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"─────────────────────────\n\n"
                     f"🔧 <b>Issue:</b> API Communication Problem\n"
                     f"🔄 <b>Solution:</b> Please Try Again In A Moment\n"
                     f"📱 <b>Status:</b> Temporary Issue\n\n"
@@ -129,7 +129,7 @@ def handle_errors(func):
             try:
                 await update.effective_message.reply_text(
                     f"❌ <b>Unexpected Error</b>\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"─────────────────────────\n\n"
                     f"🚫 <b>Issue:</b> Something Went Wrong\n"
                     f"🔄 <b>Solution:</b> Please Try Again\n"
                     f"🛠️ <b>Status:</b> Error Logged For Review\n\n"
@@ -151,14 +151,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("🧵 Topic ID", callback_data="topicid"), 
          InlineKeyboardButton("ℹ️ User Info", callback_data="userinfo")],
         [InlineKeyboardButton("📦 Export JSON", callback_data="export"), 
-         InlineKeyboardButton("🏓 Ping Test", callback_data="ping")],
+         InlineKeyboardButton("🔍 Ping Test", callback_data="ping")],
         [InlineKeyboardButton("🆘 Help & Commands", callback_data="help")]
     ])
     
     user_name = update.effective_user.first_name if update.effective_user else "User"
     text = (
         f"🔍 <b>Telegram ID Bot</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"─────────────────────────\n\n"
         f"👋 Hello <b>{user_name}</b>! I Can Help You Discover IDs and Chat Information.\n\n"
         f"✨ <b>Quick Actions:</b>\n"
         f"🆔 Get Your Telegram ID\n"
@@ -175,7 +175,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 <b>Command Reference</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"─────────────────────────\n\n"
         f"🏠 <code>/start</code> — Show Main Menu\n"
         f"🆘 <code>/help</code> — Display This Help\n\n"
         f"🔍 <b>ID Commands:</b>\n"
@@ -188,7 +188,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📱 <b>Utilities:</b>\n"
         f"ℹ️ <code>/userinfo</code> — Detailed User Info\n"
         f"📦 <code>/export</code> — Export Chat Data (JSON)\n"
-        f"🏓 <code>/ping</code> — Test Bot Response Time\n"
+        f"🔍 <code>/ping</code> — Test Bot Response Time\n"
         f"🗂️ <code>/fileid</code> — Get Media File ID\n\n"
         f"💡 <i>Tip: Use The Buttons Above For Quick Access!</i>"
     )
@@ -201,7 +201,7 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
     await update.effective_message.reply_text(
         f"🆔 <b>Your Telegram ID</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"─────────────────────────\n\n"
         f"👤 <b>User:</b> {u.full_name}\n"
         f"🔢 <b>ID:</b> <code>{u.id}</code>\n\n"
         f"💡 <i>Copy The ID by Tapping On It!</i>", 
@@ -225,7 +225,7 @@ async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.effective_message.reply_text(
         f"{icon} <b>Chat Information</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"─────────────────────────\n\n"
         f"📝 <b>Name:</b> {chat_name}\n"
         f"🔢 <b>Chat ID:</b> <code>{c.id}</code>\n"
         f"📊 <b>Type:</b> {c.type.title()}\n\n"
@@ -243,7 +243,7 @@ async def cmd_topicid(update: Update, context: ContextTypes.DEFAULT_TYPE):
             thread_id = msg.message_thread_id
             await msg.reply_text(
                 f"🧵 <b>Topic Information</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"─────────────────────────\n\n"
                 f"💬 <b>Chat:</b> {chat.title or 'Unknown'}\n"
                 f"🔢 <b>Topic ID:</b> <code>{thread_id}</code>\n\n"
                 f"✅ <i>This Message Is In A Topic Thread!</i>",
@@ -252,9 +252,9 @@ async def cmd_topicid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await msg.reply_text(
                 f"🧵 <b>Topic Status</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"─────────────────────────\n\n"
                 f"⚠️ <b>No Topic Found</b>\n\n"
-                f"📝 This Chat Doesn't Have Topics Enabled\n"
+                f"🔍 This Chat Doesn't Have Topics Enabled\n"
                 f"🔄 Or This Message Isn't In A Topic Thread\n\n"
                 f"💡 <i>Topics Are Available In Supergroups Only!</i>",
                 parse_mode="HTML"
@@ -262,7 +262,7 @@ async def cmd_topicid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await msg.reply_text(
             f"🧵 <b>Topic Feature</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"❌ <b>Not Available</b>\n\n"
             f"📱 Topics Only Work In <b>Supergroups</b>\n"
             f"🔄 Convert Your Group To Supergroup First\n\n"
@@ -288,7 +288,7 @@ async def cmd_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await update.effective_message.reply_text(
             f"👥 <b>Member Statistics</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"📊 <b>Total Members:</b> <code>{count:,}</code>\n"
             f"🏷️ <b>Status:</b> {status}\n"
             f"💬 <b>Chat:</b> {chat.title or 'Unknown'}\n\n"
@@ -299,7 +299,7 @@ async def cmd_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log.error(f"Error Getting Member Count: {e}")
         await update.effective_message.reply_text(
             f"👥 <b>Member Count</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"❌ <b>Access Denied</b>\n\n"
             f"🔒 Cannot Fetch Member Count\n"
             f"📱 Bot Might Lack Permissions\n"
@@ -317,7 +317,7 @@ async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not admins:
             await update.effective_message.reply_text(
                 f"👑 <b>Administrators</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"─────────────────────────\n\n"
                 f"❌ <b>No Admins Found</b>\n\n"
                 f"🤔 This Is Unusual...\n"
                 f"💬 <i>Every Group Should Have Admins!</i>",
@@ -343,7 +343,7 @@ async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.effective_message.reply_text(
             f"👑 <b>Chat Administrators</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"📊 <b>Total:</b> {total_admins} administrator{'s' if total_admins != 1 else ''}\n"
             f"👑 <b>Owners:</b> {owner_count}\n"
             f"🛡️ <b>Admins:</b> {admin_count}\n\n"
@@ -355,7 +355,7 @@ async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log.error(f"Error getting admins: {e}")
         await update.effective_message.reply_text(
             f"👑 <b>Administrators</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"❌ <b>Access Denied</b>\n\n"
             f"🔒 Cannot Fetch Admin List\n"
             f"📱 Bot Might Lack Permissions\n"
@@ -409,7 +409,7 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Show progress Message
         progress_msg = await update.effective_message.reply_text(
             f"📦 <b>Exporting Chat Data...</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"⏳ <i>Gathering Chat Information...</i>",
             parse_mode="HTML"
         )
@@ -432,7 +432,7 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await progress_msg.edit_text(
             f"📦 <b>Export Complete!</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"✅ <b>Status:</b> Ready For Download\n"
             f"📄 <b>Format:</b> JSON\n"
             f"🕐 <b>Generated:</b> {time.strftime('%H:%M:%S')}\n\n"
@@ -459,7 +459,7 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log.error(f"Error Exporting Data: {e}")
         await update.effective_message.reply_text(
             f"📦 <b>Export Failed</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"❌ <b>Error:</b> Could Not Export Data\n"
             f"🔧 <b>Reason:</b> Technical Error\n"
             f"🔄 <b>Solution:</b> Try Again In A Moment\n\n"
@@ -483,12 +483,12 @@ async def cmd_userinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     info = (
         f"ℹ️ <b>User Information</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"─────────────────────────\n\n"
         f"👤 <b>Name:</b> {u.full_name}\n"
         f"🆔 <b>ID:</b> <code>{u.id}</code>\n"
         f"📛 <b>Username:</b> {username_display}\n"
-        f"🌐 <b>Language:</b> {language_display}\n"
-        f"🔰 <b>Type:</b> {bot_status}\n"
+        f"🌍 <b>Language:</b> {language_display}\n"
+        f"📰 <b>Type:</b> {bot_status}\n"
         f"{premium_status}\n"
         f"🕐 <b>Checked:</b> {time.strftime('%H:%M:%S')}\n\n"
         f"💡 <i>All Your Telegram Details In One Place!</i>"
@@ -499,8 +499,8 @@ async def cmd_userinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start = time.time()
     msg = await update.effective_message.reply_text(
-        f"🏓 <b>Testing Connection...</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔍 <b>Testing Connection...</b>\n"
+        f"─────────────────────────\n\n"
         f"⏳ <i>Measuring Response Time...</i>"
     )
     latency = (time.time() - start) * 1000
@@ -511,17 +511,17 @@ async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
         emoji = "⚡"
     elif latency < 300:
         status = "🟡 Good" 
-        emoji = "👍"
+        emoji = "💚"
     elif latency < 500:
         status = "🟠 Fair"
         emoji = "⚠️"
     else:
         status = "🔴 Slow"
-        emoji = "🐌"
+        emoji = "🌍"
     
     await msg.edit_text(
-        f"🏓 <b>Ping Test Results</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔍 <b>Ping Test Results</b>\n"
+        f"─────────────────────────\n\n"
         f"{emoji} <b>Response Time:</b> <code>{latency:.2f} ms</code>\n"
         f"📊 <b>Status:</b> {status}\n"
         f"🕐 <b>Tested:</b> {time.strftime('%H:%M:%S')}\n\n"
@@ -568,8 +568,8 @@ async def cmd_fileid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await msg.reply_text(
             f"🗂️ <b>File Information</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"📁 <b>Type:</b> {file_type}\n"
+            f"─────────────────────────\n\n"
+            f"📝 <b>Type:</b> {file_type}\n"
             f"🆔 <b>File ID:</b>\n<code>{file_id}</code>{size_text}\n\n"
             f"💡 <i>Tap The ID To Copy It!\n"
             f"Use This ID To Send The Same File.</i>", 
@@ -578,7 +578,7 @@ async def cmd_fileid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await msg.reply_text(
             f"🗂️ <b>File ID Extractor</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"─────────────────────────\n\n"
             f"❌ <b>No Media Found</b>\n\n"
             f"📱 <b>How To Use:</b>\n"
             f"1️⃣ Find A Message With Media\n"
@@ -658,11 +658,10 @@ async def run_polling():
                     log.info("🧹 Clearing Pending Updates...")
                     await application.bot.get_updates(offset=-1, limit=1, timeout=1)
 
-                    # Start Polling With Proper Error Handling
+                    # Start Polling With Proper Parameters (FIXED)
                     await application.updater.start_polling(
                         drop_pending_updates=True,
-                        allowed_updates=Update.ALL_TYPES,
-                        close_loop=False
+                        allowed_updates=Update.ALL_TYPES
                     )
                     
                     log.info("✅ Bot polling started successfully!")
