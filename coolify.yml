@@ -42,6 +42,7 @@ services:
     
     # Resource Limits (Optional - Adjust Based On Your Needs)
     deploy:
+      replicas: 1
       resources:
         limits:
           memory: 256M
