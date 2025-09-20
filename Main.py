@@ -20,7 +20,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
 )
-from telegram.error import TelegramError
+from telegram.error import TelegramError, Conflict
 
 # ---------- Production Logging ----------
 def setup_logging():
@@ -81,7 +81,7 @@ APP_ENV = os.getenv("APP_ENV", "production")
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 
-# Sync with Docker/Coolify defaults
+# Sync With Docker/Coolify Defaults
 PORT = int(os.getenv("PORT", "3000"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
@@ -638,36 +638,83 @@ def register_handlers(app: Application):
     
     log.info(f"✅ Registered {len(handlers)} Handlers")
 
-# ---------- Async Polling Function ----------
+# ---------- Async Polling Function With Conflict Handling ----------
 async def run_polling():
-    """Run bot polling in background"""
+    """Run Bot Polling with Proper Conflict Handling"""
     global application, polling_task
+    max_retries = 5
+    retry_delay = 5
+    
     try:
         if application:
             log.info("🔄 Starting Bot Polling...")
             await application.initialize()
             await application.start()
             
-            # Start polling without blocking
-            await application.updater.start_polling(
-                drop_pending_updates=True,
-                allowed_updates=Update.ALL_TYPES
-            )
-            
-            # Keep polling until shutdown
-            while not shutdown_event.is_set():
-                await asyncio.sleep(1)
-                
+            retry_count = 0
+            while not shutdown_event.is_set() and retry_count < max_retries:
+                try:
+                    # Clear Any Pending Updates First to Prevent Conflicts
+                    log.info("🧹 Clearing Pending Updates...")
+                    await application.bot.get_updates(offset=-1, limit=1, timeout=1)
+
+                    # Start Polling With Proper Error Handling
+                    await application.updater.start_polling(
+                        drop_pending_updates=True,
+                        allowed_updates=Update.ALL_TYPES,
+                        close_loop=False
+                    )
+                    
+                    log.info("✅ Bot polling started successfully!")
+                    retry_count = 0  # Reset Retry Count On Successful Start
+                    
+                    # Keep Polling Until Shutdown
+                    while not shutdown_event.is_set():
+                        await asyncio.sleep(1)
+                        
+                except Conflict as e:
+                    log.warning(f"⚠️ Bot Conflict Detected : {e}")
+                    retry_count += 1
+                    
+                    if retry_count < max_retries:
+                        log.info(f"🔄 Waiting {retry_delay} Seconds Before Retry {retry_count}/{max_retries}...")
+                        
+                        # Stop Current Updater If Running
+                        try:
+                            if application.updater.running:
+                                await application.updater.stop()
+                        except Exception as stop_error:
+                            log.warning(f"Error Stopping Updater: {stop_error}")
+                        
+                        # Wait Before Retrying
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 2, 60)  # Exponential Backoff, Max 60s
+                    else:
+                        log.error("❌ Max Retries Reached for Bot Conflicts")
+                        break
+                        
+                except Exception as e:
+                    log.error(f"❌ Unexpected Polling Error: {e}")
+                    retry_count += 1
+                    
+                    if retry_count < max_retries:
+                        log.info(f"🔄 Retrying After Error... {retry_count}/{max_retries}")
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        log.error("❌ Max Retries Reached for Polling Errors")
+                        break
+                        
     except Exception as e:
-        log.error(f"❌ Polling Error: {e}")
+        log.error(f"❌ Fatal Polling Error: {e}")
         raise
     finally:
         if application:
             try:
-                await application.updater.stop()
+                if application.updater.running:
+                    await application.updater.stop()
                 await application.stop()
                 await application.shutdown()
-                log.info("✅ Bot Polling Stopped")
+                log.info("✅ Bot Polling Stopped Cleanly")
             except Exception as e:
                 log.error(f"❌ Error Stopping Bot: {e}")
 
@@ -681,19 +728,24 @@ async def lifespan(app: FastAPI):
         # Startup
         log.info("🚀 Starting Telegram ID Bot...")
 
-        # Create the application
+        # Create the application with better configuration
         application = (
             ApplicationBuilder()
             .token(BOT_TOKEN)
             .connect_timeout(REQUEST_TIMEOUT)
             .read_timeout(REQUEST_TIMEOUT)
+            .write_timeout(REQUEST_TIMEOUT)
+            .pool_timeout(REQUEST_TIMEOUT)
+            .get_updates_connect_timeout(REQUEST_TIMEOUT)
+            .get_updates_read_timeout(REQUEST_TIMEOUT)
+            .concurrent_updates(True)
             .build()
         )
 
         # Register Handlers
         register_handlers(application)
 
-        # Start polling in background task
+        # Start Polling In Background Task
         polling_task = asyncio.create_task(run_polling())
 
         log.info(f"✅ Bot Started Successfully — Listening On Port {PORT}")
@@ -710,15 +762,27 @@ async def lifespan(app: FastAPI):
         # Signal shutdown
         shutdown_event.set()
         
-        # Cancel polling task
+        # Cancel Polling Task
         if polling_task and not polling_task.done():
             polling_task.cancel()
             try:
-                await polling_task
+                await asyncio.wait_for(polling_task, timeout=10.0)
+            except asyncio.TimeoutError:
+                log.warning("⚠️ Polling Task Didn't Stop Within Timeout")
             except asyncio.CancelledError:
-                pass
+                log.info("✅ Polling Task Cancelled Successfully")
             except Exception as e:
                 log.error(f"❌ Error Cancelling Polling Task: {e}")
+
+        # Ensure application cleanup
+        if application:
+            try:
+                if application.updater.running:
+                    await application.updater.stop()
+                await application.stop()
+                await application.shutdown()
+            except Exception as e:
+                log.error(f"❌ Error during application shutdown: {e}")
         
         log.info("✅ Bot Shutdown Completed")
 
@@ -777,8 +841,9 @@ async def metrics():
     try:
         return {
             "uptime": time.time(),
-            "bot_running": bool(application and not application.updater._running),
+            "bot_running": bool(application and not shutdown_event.is_set()),
             "polling_task_running": bool(polling_task and not polling_task.done()),
+            "updater_running": bool(application.updater.running),
             "version": "2.0.0"
         }
     except Exception as e:
@@ -814,10 +879,13 @@ async def status():
             "system_info": {
                 "python_version": sys.version,
                 "timestamp": time.time(),
+                "shutdown_event_set": shutdown_event.is_set(),
+                "polling_task_done": polling_task.done() if polling_task else None,
+                "updater_running": application.updater.running if application else None,
             }
         }
     except Exception as e:
-        log.error(f"Status check failed: {e}")
+        log.error(f"Status Check Failed : {e}")
         return {"status": "error", "message": str(e)}
 
 # ---------- Error Handlers ----------
