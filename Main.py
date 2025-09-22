@@ -664,7 +664,7 @@ async def run_polling():
                         allowed_updates=Update.ALL_TYPES
                     )
                     
-                    log.info("✅ Bot polling started successfully!")
+                    log.info("✅ Bot Polling Started Successfully!")
                     retry_count = 0  # Reset Retry Count On Successful Start
                     
                     # Keep Polling Until Shutdown
@@ -672,7 +672,14 @@ async def run_polling():
                         await asyncio.sleep(1)
                         
                 except Conflict as e:
-                    log.warning(f"⚠️ Bot Conflict Detected : {e}")
+                    log.warning(f"⚠️ Bot Conflict Detected: {e}")
+                    # Enhanced Error Handling: Log Bot Details for Debugging
+                    try:
+                        me = await application.bot.get_me()
+                        log.warning(f"⚠️ Conflict For Bot @{me.username} (ID: {me.id}). Ensure Only One Instance Is Running.")
+                    except Exception as bot_error:
+                        log.warning(f"⚠️ Could Not Retrieve Bot Info During Conflict: {bot_error}")
+                    
                     retry_count += 1
                     
                     if retry_count < max_retries:
@@ -689,7 +696,7 @@ async def run_polling():
                         await asyncio.sleep(retry_delay)
                         retry_delay = min(retry_delay * 2, 60)  # Exponential Backoff, Max 60s
                     else:
-                        log.error("❌ Max Retries Reached for Bot Conflicts")
+                        log.error("❌ Max Retries Reached for Bot Conflicts. Shutting Down Polling To Prevent Further Issues.")
                         break
                         
                 except Exception as e:
