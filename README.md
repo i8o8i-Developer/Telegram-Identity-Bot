@@ -6,6 +6,8 @@ It Works With **FastAPI** + **Python-Telegram-Bot** And Is Deployable To **Googl
 👉 Live Demo: [TeleIdentity\_Bot](https://t.me/TeleIdentity_Bot)
 👉 Cloud Run: [Web Service](https://bot.durgaaisolutions.in)
 
+<a href="https://www.producthunt.com/products/telegram-identity-bot/reviews?utm_source=badge-product_review&utm_medium=badge&utm_source=badge-telegram&#0045;identity&#0045;bot" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1110182&theme=dark" alt="Telegram&#0032;Identity&#0032;Bot - Telegram&#0032;Identity&#0032;&#0038;&#0032;Chat&#0032;Management&#0032;Tool&#0032;For&#0032;Power&#0032;Users | Product Hunt" style="width: 250px; height: 54px;" width="250" height="54" /></a>
+<a href="https://www.producthunt.com/products/telegram-identity-bot?utm_source=badge-follow&utm_medium=badge&utm_source=badge-telegram&#0045;identity&#0045;bot" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1110182&theme=dark" alt="Telegram&#0032;Identity&#0032;Bot - Telegram&#0032;Identity&#0032;&#0038;&#0032;Chat&#0032;Management&#0032;Tool&#0032;For&#0032;Power&#0032;Users | Product Hunt" style="width: 250px; height: 54px;" width="250" height="54" /></a>
 ---
 
 ## ✨ Features
