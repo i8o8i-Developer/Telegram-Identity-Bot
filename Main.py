@@ -311,6 +311,21 @@ async def cmd_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @handle_errors
 async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
+    
+    # Private Chats Don't Have Administrators
+    if chat.type == "private":
+        await update.effective_message.reply_text(
+            f"👑 <b>Administrators</b>\n"
+            f"─────────────────────────\n\n"
+            f"❌ <b>Not Applicable</b>\n\n"
+            f"🔒 Private Chats Don't Have Administrators\n"
+            f"📱 Only Groups And Channels Have Admins\n"
+            f"🔄 Try In A Group Chat Instead\n\n"a
+            f"💡 <i>Use /chatid To Get Chat Info!</i>",
+            parse_mode="HTML"
+        )
+        return
+    
     try:
         admins = await context.bot.get_chat_administrators(chat.id)
         
