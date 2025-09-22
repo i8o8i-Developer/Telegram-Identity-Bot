@@ -676,7 +676,7 @@ async def run_polling():
                     # Enhanced Error Handling: Log Bot Details for Debugging
                     try:
                         me = await application.bot.get_me()
-                        log.warning(f"⚠️ Conflict For Bot @{me.username} (ID: {me.id}). Ensure Only One Instance Is Running.")
+                        log.warning(f"⚠️ Conflict For Bot @{me.username} (ID: {me.id}). Another Instance Is Already Polling.")
                     except Exception as bot_error:
                         log.warning(f"⚠️ Could Not Retrieve Bot Info During Conflict: {bot_error}")
                     
@@ -696,7 +696,7 @@ async def run_polling():
                         await asyncio.sleep(retry_delay)
                         retry_delay = min(retry_delay * 2, 60)  # Exponential Backoff, Max 60s
                     else:
-                        log.error("❌ Max Retries Reached for Bot Conflicts. Shutting Down Polling To Prevent Further Issues.")
+                        log.info("🔄 Max Retries Reached. Ignoring Conflict. Polling Skipped For This Instance.")
                         break
                         
                 except Exception as e:
