@@ -320,7 +320,7 @@ async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"❌ <b>Not Applicable</b>\n\n"
             f"🔒 Private Chats Don't Have Administrators\n"
             f"📱 Only Groups And Channels Have Admins\n"
-            f"🔄 Try In A Group Chat Instead\n\n"a
+            f"🔄 Try In A Group Chat Instead\n\n"
             f"💡 <i>Use /chatid To Get Chat Info!</i>",
             parse_mode="HTML"
         )
