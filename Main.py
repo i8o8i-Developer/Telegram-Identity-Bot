@@ -59,7 +59,7 @@ try:
         CallbackQueryHandler,
         ContextTypes,
     )
-    from telegram.error import TelegramError, Conflict
+    from telegram.error import TelegramError, Conflict, NetworkError
     TELEGRAM_AVAILABLE = True
 except Exception:
     TELEGRAM_AVAILABLE = False
@@ -69,6 +69,9 @@ except Exception:
         pass
 
     class Conflict(TelegramError):
+        pass
+
+    class NetworkError(TelegramError):
         pass
 
     class Update:
@@ -220,7 +223,14 @@ def validate_environment():
 BOT_TOKEN = None
 APP_ENV = os.getenv("APP_ENV", "production")
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
+
+# Separate Timeouts For Different Operations
+# Regular API Calls (get_me, send_message, etc.) - Should Be Reasonably Short
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
+# Long Polling Read Timeout - Must Be Much Longer To Accommodate Telegram's Long Polling
+# Telegram Recommends timeout + 5 Seconds For Network Delays
+# Default: 30s Polling + 60s Buffer = 90s Total
+POLLING_TIMEOUT = int(os.getenv("POLLING_TIMEOUT", "90"))
 
 # If Set To A Truthy Value ("1", "true", "yes"), The Health Endpoint Will Skip
 # Calling The Telegram API. This Is Useful In Network-Restricted Environments Where
@@ -819,9 +829,8 @@ async def run_polling():
                     # Clear Any Pending Updates First to Prevent Conflicts
                     log.info("🧹 Clearing Pending Updates...")
                     try:
-                        # Use The Configured REQUEST_TIMEOUT Here. If The Network To Telegram
-                        # Is Flaky, A Short 1s Timeout Can Produce Frequent ConnectErrors.
-                        await application.bot.get_updates(offset=-1, limit=1, timeout=REQUEST_TIMEOUT)
+                        # Use A Short Timeout For Clearing Updates (Not Long Polling)
+                        await application.bot.get_updates(offset=-1, limit=1, timeout=1)
                     except Exception as e:
                         # Non-Fatal — log And Continue. start_polling Has Its Own Retry Logic.
                         log.warning(f"Non-Fatal Error While Clearing Pending Updates: {e}")
@@ -866,6 +875,26 @@ async def run_polling():
                     else:
                         log.info("🔄 Max Retries Reached. Ignoring Conflict. Polling Skipped For This Instance.")
                         break
+                
+                except NetworkError as e:
+                    log.warning(f"⚠️ Network Error During Polling : {e}")
+                    retry_count += 1
+                    
+                    if retry_count < max_retries:
+                        log.info(f"🔄 Network Issue - Retrying After {retry_delay}s... {retry_count}/{max_retries}")
+                        
+                        # Stop Current Updater If Running
+                        try:
+                            if application.updater.running:
+                                await application.updater.stop()
+                        except Exception as stop_error:
+                            log.warning(f"Error Stopping Updater After Network Error : {stop_error}")
+                        
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 2, 60)  # Exponential Backoff
+                    else:
+                        log.error("❌ Max Retries Reached for Network Errors. Continuing Without Polling.")
+                        break
                         
                 except Exception as e:
                     log.error(f"❌ Unexpected Polling Error: {e}")
@@ -874,6 +903,7 @@ async def run_polling():
                     if retry_count < max_retries:
                         log.info(f"🔄 Retrying After Error... {retry_count}/{max_retries}")
                         await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 2, 60)  # Exponential Backoff
                     else:
                         log.error("❌ Max Retries Reached for Polling Errors")
                         break
@@ -914,15 +944,16 @@ async def lifespan(app: FastAPI):
         BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
         # Create The Application With Better Configuration
+        # Use Separate Timeouts: Short For Regular Requests, Long For Polling
         application = (
             ApplicationBuilder()
             .token(BOT_TOKEN)
-            .connect_timeout(REQUEST_TIMEOUT)
-            .read_timeout(REQUEST_TIMEOUT)
-            .write_timeout(REQUEST_TIMEOUT)
-            .pool_timeout(REQUEST_TIMEOUT)
-            .get_updates_connect_timeout(REQUEST_TIMEOUT)
-            .get_updates_read_timeout(REQUEST_TIMEOUT)
+            .connect_timeout(REQUEST_TIMEOUT)  # Connection Establishment: 30s
+            .read_timeout(REQUEST_TIMEOUT)      # Regular API Reads: 30s
+            .write_timeout(REQUEST_TIMEOUT)     # Regular API Writes: 30s
+            .pool_timeout(REQUEST_TIMEOUT)      # Connection Pool: 30s
+            .get_updates_connect_timeout(REQUEST_TIMEOUT)  # Polling Connection: 30s
+            .get_updates_read_timeout(POLLING_TIMEOUT)     # Polling Read: 90s (Long Polling!)
             .concurrent_updates(True)
             .build()
         )
