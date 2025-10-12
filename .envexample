@@ -1,0 +1,20 @@
+# ===========================================
+# Telegram Identity Bot - Environment Config
+# ===========================================
+
+# ---------- Required Variables ----------
+TELEGRAM_BOT_TOKEN=""
+WEBHOOK_URL=https://bot.durgaaisolutions.in
+
+# ---------- Application Configuration ----------
+APP_ENV=production
+PORT=3000
+LOG_LEVEL=INFO
+
+# ---------- Bot Configuration ----------
+BOT_SIGNATURE=i8o8i Developer
+MAX_RETRIES=3
+REQUEST_TIMEOUT=30
+
+# ---------- Health Check Configuration ----------
+SKIP_TELEGRAM_HEALTH_CHECK=false

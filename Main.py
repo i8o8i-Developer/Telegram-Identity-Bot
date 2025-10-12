@@ -42,6 +42,12 @@ except Exception:
                 return fn
             return _decorator
 
+        def post(self, path, **kwargs):
+            def _decorator(fn):
+                self._routes[path] = fn
+                return fn
+            return _decorator
+
         def exception_handler(self, exc_type):
             def _decorator(fn):
                 return fn
@@ -227,10 +233,6 @@ MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 # Separate Timeouts For Different Operations
 # Regular API Calls (get_me, send_message, etc.) - Should Be Reasonably Short
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
-# Long Polling Read Timeout - Must Be Much Longer To Accommodate Telegram's Long Polling
-# Telegram Recommends timeout + 5 Seconds For Network Delays
-# Default: 30s Polling + 60s Buffer = 90s Total
-POLLING_TIMEOUT = int(os.getenv("POLLING_TIMEOUT", "90"))
 
 # If Set To A Truthy Value ("1", "true", "yes"), The Health Endpoint Will Skip
 # Calling The Telegram API. This Is Useful In Network-Restricted Environments Where
@@ -240,12 +242,12 @@ SKIP_TELEGRAM_HEALTH_CHECK = os.getenv("SKIP_TELEGRAM_HEALTH_CHECK", "false").lo
 
 # Sync With Docker/Coolify Defaults
 PORT = int(os.getenv("PORT", "3000"))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://bot.durgaaisolutions.in")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 # ---------- Global State ----------
 application: Optional[Application] = None
 shutdown_event = asyncio.Event()
-polling_task: Optional[asyncio.Task] = None
 
 # ---------- Graceful Shutdown Handler ----------
 def signal_handler(signum, frame):
@@ -810,123 +812,11 @@ def register_handlers(app: Application):
     
     log.info(f"✅ Registered {len(handlers)} Handlers")
 
-# ---------- Async Polling Function With Conflict Handling ----------
-async def run_polling():
-    """Run Bot Polling with Proper Conflict Handling"""
-    global application, polling_task
-    max_retries = 5
-    retry_delay = 5
-    
-    try:
-        if application:
-            log.info("🔄 Starting Bot Polling...")
-            await application.initialize()
-            await application.start()
-            
-            retry_count = 0
-            while not shutdown_event.is_set() and retry_count < max_retries:
-                try:
-                    # Clear Any Pending Updates First to Prevent Conflicts
-                    log.info("🧹 Clearing Pending Updates...")
-                    try:
-                        # Use A Short Timeout For Clearing Updates (Not Long Polling)
-                        await application.bot.get_updates(offset=-1, limit=1, timeout=1)
-                    except Exception as e:
-                        # Non-Fatal — log And Continue. start_polling Has Its Own Retry Logic.
-                        log.warning(f"Non-Fatal Error While Clearing Pending Updates: {e}")
-
-                    # Start Polling With Proper Parameters (FIXED)
-                    await application.updater.start_polling(
-                        drop_pending_updates=True,
-                        allowed_updates=Update.ALL_TYPES
-                    )
-                    
-                    log.info("✅ Bot Polling Started Successfully!")
-                    retry_count = 0  # Reset Retry Count On Successful Start
-                    
-                    # Keep Polling Until Shutdown
-                    while not shutdown_event.is_set():
-                        await asyncio.sleep(1)
-                        
-                except Conflict as e:
-                    log.warning(f"⚠️ Bot Conflict Detected: {e}")
-                    # Enhanced Error Handling: Log Bot Details for Debugging
-                    try:
-                        me = await application.bot.get_me()
-                        log.warning(f"⚠️ Conflict For Bot @{me.username} (ID: {me.id}). Another Instance Is Already Polling.")
-                    except Exception as bot_error:
-                        log.warning(f"⚠️ Could Not Retrieve Bot Info During Conflict: {bot_error}")
-                    
-                    retry_count += 1
-                    
-                    if retry_count < max_retries:
-                        log.info(f"🔄 Waiting {retry_delay} Seconds Before Retry {retry_count}/{max_retries}...")
-                        
-                        # Stop Current Updater If Running
-                        try:
-                            if application.updater.running:
-                                await application.updater.stop()
-                        except Exception as stop_error:
-                            log.warning(f"Error Stopping Updater: {stop_error}")
-                        
-                        # Wait Before Retrying
-                        await asyncio.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 2, 60)  # Exponential Backoff, Max 60s
-                    else:
-                        log.info("🔄 Max Retries Reached. Ignoring Conflict. Polling Skipped For This Instance.")
-                        break
-                
-                except NetworkError as e:
-                    log.warning(f"⚠️ Network Error During Polling : {e}")
-                    retry_count += 1
-                    
-                    if retry_count < max_retries:
-                        log.info(f"🔄 Network Issue - Retrying After {retry_delay}s... {retry_count}/{max_retries}")
-                        
-                        # Stop Current Updater If Running
-                        try:
-                            if application.updater.running:
-                                await application.updater.stop()
-                        except Exception as stop_error:
-                            log.warning(f"Error Stopping Updater After Network Error : {stop_error}")
-                        
-                        await asyncio.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 2, 60)  # Exponential Backoff
-                    else:
-                        log.error("❌ Max Retries Reached for Network Errors. Continuing Without Polling.")
-                        break
-                        
-                except Exception as e:
-                    log.error(f"❌ Unexpected Polling Error: {e}")
-                    retry_count += 1
-                    
-                    if retry_count < max_retries:
-                        log.info(f"🔄 Retrying After Error... {retry_count}/{max_retries}")
-                        await asyncio.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 2, 60)  # Exponential Backoff
-                    else:
-                        log.error("❌ Max Retries Reached for Polling Errors")
-                        break
-                        
-    except Exception as e:
-        log.error(f"❌ Fatal Polling Error: {e}")
-        raise
-    finally:
-        if application:
-            try:
-                if application.updater.running:
-                    await application.updater.stop()
-                await application.stop()
-                await application.shutdown()
-                log.info("✅ Bot Polling Stopped Cleanly")
-            except Exception as e:
-                log.error(f"❌ Error Stopping Bot: {e}")
-
 # ---------- Application Lifespan ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage Application LifeSpan With Proper Startup and Shutdown"""
-    global application, polling_task
+    global application
     
     try:
         # Startup
@@ -944,7 +834,7 @@ async def lifespan(app: FastAPI):
         BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
         # Create The Application With Better Configuration
-        # Use Separate Timeouts: Short For Regular Requests, Long For Polling
+        # For Webhook Mode, We Don't Need Polling-Related Timeouts
         application = (
             ApplicationBuilder()
             .token(BOT_TOKEN)
@@ -952,19 +842,32 @@ async def lifespan(app: FastAPI):
             .read_timeout(REQUEST_TIMEOUT)      # Regular API Reads: 30s
             .write_timeout(REQUEST_TIMEOUT)     # Regular API Writes: 30s
             .pool_timeout(REQUEST_TIMEOUT)      # Connection Pool: 30s
-            .get_updates_connect_timeout(REQUEST_TIMEOUT)  # Polling Connection: 30s
-            .get_updates_read_timeout(POLLING_TIMEOUT)     # Polling Read: 90s (Long Polling!)
             .concurrent_updates(True)
             .build()
         )
 
+        # Explicitly Disable Polling For Webhook Mode
+        if hasattr(application, 'updater') and application.updater:
+            application.updater = None
+
         # Register Handlers
         register_handlers(application)
 
-        # Start Polling In Background Task
-        polling_task = asyncio.create_task(run_polling())
+        # Initialize The Application (Don't Start Polling)
+        await application.initialize()
+        # Note: We Don't Call application.start() For Webhook Mode To Avoid Polling
 
-        log.info(f"✅ Bot Started Successfully — Listening On Port {PORT}")
+        # Set Webhook With Error Handling
+        try:
+            webhook_url = f"{WEBHOOK_URL.rstrip('/')}/webhook"
+            await application.bot.set_webhook(url=webhook_url)
+            log.info(f"✅ Webhook Set To: {webhook_url}")
+        except Exception as webhook_error:
+            log.warning(f"⚠️ Failed To Set Webhook: {webhook_error}")
+            log.warning("⚠️ Bot Will Continue Without Webhook - Check WEBHOOK_URL Configuration")
+            # Don't Raise - Allow The Bot To Start Without Webhook For Development
+
+        log.info(f"✅ Bot Started Successfully — Webhook Active On Port {PORT}")
 
         yield
         
@@ -978,27 +881,20 @@ async def lifespan(app: FastAPI):
         # Signal shutdown
         shutdown_event.set()
         
-        # Cancel Polling Task
-        if polling_task and not polling_task.done():
-            polling_task.cancel()
-            try:
-                await asyncio.wait_for(polling_task, timeout=10.0)
-            except asyncio.TimeoutError:
-                log.warning("⚠️ Polling Task Didn't Stop Within Timeout")
-            except asyncio.CancelledError:
-                log.info("✅ Polling Task Cancelled Successfully")
-            except Exception as e:
-                log.error(f"❌ Error Cancelling Polling Task: {e}")
-
-        # Ensure application cleanup
+        # Ensure Application Cleanup
         if application:
             try:
-                if application.updater.running:
-                    await application.updater.stop()
-                await application.stop()
+                # Remove Webhook On Shutdown
+                try:
+                    await application.bot.delete_webhook()
+                    log.info("✅ Webhook Removed")
+                except Exception as webhook_error:
+                    log.warning(f"⚠️ Error Removing Webhook: {webhook_error}")
+
+                # Since We Didn't Call application.start(), We Don't Call application.stop()
                 await application.shutdown()
             except Exception as e:
-                log.error(f"❌ Error during application shutdown: {e}")
+                log.error(f"❌ Error During Application Shutdown: {e}")
         
         log.info("✅ Bot Shutdown Completed")
 
@@ -1030,22 +926,22 @@ async def root():
 async def health():
     """Kubernetes/Coolify Health Check Endpoint"""
     global application
-    
+
     if not application:
         # Return A Not-Initialized Status Instead Of Raising So The Endpoint Remains
         # Reachable; Orchestration Platforms Can Use This For Finer-Grained Checks.
         return {"status": "Not_Initialized", "detail": "Bot Not Initialized"}
 
     try:
-        # Optionally Skip Telegram API Check In Environments Where Outbound Traffic
-        # Is Restricted Or When You Prefer A Simpler Readiness Probe.
-        if SKIP_TELEGRAM_HEALTH_CHECK:
+        # For Webhook-Based Bots, We Can Skip The Telegram API Call Since Webhooks
+        # Don't Require Constant Polling. This Prevents Network Timeouts In Restricted Environments.
+        if SKIP_TELEGRAM_HEALTH_CHECK or APP_ENV == "production":
             return {
                 "status": "Healthy",
-                "bot_username": None,
+                "bot_username": "webhook-mode",
                 "timestamp": time.time(),
                 "version": "2.0.0",
-                "note": "Telegram Check Skipped By SKIP_TELEGRAM_HEALTH_CHECK"
+                "note": "Webhook Mode - Telegram API Check Skipped For Stability"
             }
 
         me = await application.bot.get_me()
@@ -1071,7 +967,7 @@ async def health():
 @app.get("/metrics")
 async def metrics():
     """Basic Metrics Endpoint For Monitoring"""
-    global application, polling_task
+    global application
     
     if not application:
         return {"error": "Bot Not Initialized"}
@@ -1080,8 +976,7 @@ async def metrics():
         return {
             "uptime": time.time(),
             "bot_running": bool(application and not shutdown_event.is_set()),
-            "polling_task_running": bool(polling_task and not polling_task.done()),
-            "updater_running": bool(application.updater.running),
+            "webhook_active": True,  # Webhook Is Always Active When App Is Running
             "version": "2.0.0"
         }
     except Exception as e:
@@ -1118,8 +1013,7 @@ async def status():
                 "python_version": sys.version,
                 "timestamp": time.time(),
                 "shutdown_event_set": shutdown_event.is_set(),
-                "polling_task_done": polling_task.done() if polling_task else None,
-                "updater_running": application.updater.running if application else None,
+                "webhook_url": f"{WEBHOOK_URL.rstrip('/')}/webhook",
             }
         }
     except Exception as e:
@@ -1131,6 +1025,28 @@ async def status():
 async def global_exception_handler(request, exc):
     log.error(f"Global Exception: {exc}")
     return {"error": "Internal Server Error", "timestamp": time.time()}
+
+# ---------- Webhook Endpoint ----------
+@app.post("/webhook")
+async def webhook(update: Dict[str, Any]):
+    """Handle Telegram Webhook Updates"""
+    global application
+    
+    if not application:
+        log.error("❌ Webhook Received But Application Not Initialized")
+        return {"error": "Application Not Initialized"}
+    
+    try:
+        # Convert Dict To Update Object
+        telegram_update = Update.de_json(update, application.bot)
+        
+        # Process The Update
+        await application.process_update(telegram_update)
+        
+        return {"status": "ok"}
+    except Exception as e:
+        log.error(f"❌ Error Processing Webhook Update : {e}")
+        return {"error": "Failed To Process Update"}
 
 if __name__ == "__main__":
     try:

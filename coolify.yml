@@ -1,5 +1,6 @@
-# Coolify Deployment Configuration
+# Coolify Deployment Configuration for Telegram ID Bot (Webhook-based)
 # Place This File As coolify.yml In Your Repository Root
+# This bot now uses webhooks instead of polling for production efficiency
 
 version: "3.8"
 
@@ -14,6 +15,8 @@ services:
     environment:
       # Required Environment Variables
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - WEBHOOK_DOMAIN=${WEBHOOK_DOMAIN:-your-domain.com}
       
       # Application Configuration
       - PORT=3000
@@ -21,9 +24,10 @@ services:
       - LOG_LEVEL=INFO
       
       # Bot Configuration
-      - BOT_SIGNATURE=${BOT_SIGNATURE:-"Coolify Deployed Bot"}
+      - BOT_SIGNATURE=${BOT_SIGNATURE:-"i8o8i Developer"}
       - MAX_RETRIES=3
       - REQUEST_TIMEOUT=30
+      - SKIP_TELEGRAM_HEALTH_CHECK=${SKIP_TELEGRAM_HEALTH_CHECK:-false}
       
       # Performance Tuning
       - PYTHONUNBUFFERED=1
@@ -68,7 +72,7 @@ services:
       - "coolify.version=1.0"
       - "coolify.type=application"
       - "traefik.enable=true"
-      - "traefik.http.routers.telegram-bot.rule=Host(`your-domain.com`)"
+      - "traefik.http.routers.telegram-bot.rule=Host(`${WEBHOOK_DOMAIN:-your-domain.com}`)"
       - "traefik.http.services.telegram-bot.loadbalancer.server.port=3000"
 
 networks:

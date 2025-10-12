@@ -38,7 +38,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     APP_ENV=production \
     PORT=3000 \
-    LOG_LEVEL=INFO
+    LOG_LEVEL=INFO \
+    WEBHOOK_URL=https://bot.durgaaisolutions.in
 
 RUN useradd --create-home --shell /bin/bash app && \
     chown -R app:app /app
