@@ -1,4 +1,4 @@
-# TelegramIdentityBot
+# Telegram Identity Bot
 
 A Lightweight Telegram Bot That Helps You Fetch IDs, Chat Info, User Info, Admins, And More.
 It Works With FastAPI + Python-Telegram-Bot And Is Deployable To Coolify.
