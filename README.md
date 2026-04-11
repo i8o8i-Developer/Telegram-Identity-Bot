@@ -12,14 +12,18 @@ It Works With FastAPI + Python-Telegram-Bot And Is Deployable To Coolify.
 ## Features
 
 * 👤 Get Your Telegram User ID
+* ↩️ Extract User / Sender Chat IDs From Replied Messages
 * 💬 Get Current Chat/Group ID
+* 🏷️ Inspect Detailed Chat Metadata
 * 🧵 Fetch Topic IDs In Threaded Groups
+* 🧾 Show Message, Reply, And Topic IDs
 * 👥 Count Members In A Chat/Group
 * 👑 List Group Admins
 * 📦 Export Chat Snapshot As JSON
 * ℹ️ Show Detailed User Info
 * 🏓 Check Bot Latency With `/ping`
 * 🆔 Extract File IDs Of Media Files
+* 🌐 Inspect Registered Telegram Webhook At `/webhook-info`
 
 
 ## TechStack
@@ -61,7 +65,7 @@ Create `.env` file:
 ```ini
 TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
 BOT_SIGNATURE="i8o8i Developer"
-PORT=3000
+PORT=5860
 WEBHOOK_URL=https://your-domain.com
 WEBHOOK_DOMAIN=your-domain.com
 ```
@@ -69,10 +73,10 @@ WEBHOOK_DOMAIN=your-domain.com
 ### 5. RunLocally
 
 ```bash
-uvicorn Main:app --reload --port 3000
+uvicorn Main:app --reload --port 5860
 ```
 
-The Bot Runs In Webhook Mode And Exposes FastAPI Endpoints At `http://127.0.0.1:3000`.
+The Bot Runs In Webhook Mode And Exposes FastAPI Endpoints At `http://127.0.0.1:5860`.
 
 
 ## Deploy To Coolify
@@ -87,11 +91,12 @@ docker push i8o8i-Developer/telegram-identity-bot:latest
 
 ### 2. Configure Coolify
 
-- Set The App Port To `3000`.
+- Set The App Port To `5860`.
 - Add Environment Variables: `TELEGRAM_BOT_TOKEN`, `WEBHOOK_URL`, `WEBHOOK_DOMAIN`, `BOT_SIGNATURE`, `APP_ENV=production`.
 - Deploy The Image.
 
 Coolify Will Use The Health Endpoint `/healthz` To Verify The Service.
+Use `/webhook-info` or `/status` after deploy to confirm Telegram is pointing at the expected webhook.
 
 
 ## Available Commands
@@ -101,10 +106,13 @@ Coolify Will Use The Health Endpoint `/healthz` To Verify The Service.
 | `/start` | Show Main Menu |
 | `/help` | Show Help Message |
 | `/id` | Show Your Telegram ID |
+| `/replyid` | Show ID Of Replied User Or Sender Chat |
 | `/chatid` | Show Current Chat ID |
+| `/chatinfo` | Show Detailed Chat Metadata |
 | `/topicid` | Show Topic ID (If In Thread) |
 | `/members` | Get Chat Member Count |
 | `/admins` | List Chat Admins |
+| `/messageid` | Show Current Message / Reply / Topic IDs |
 | `/export` | Export Chat Snapshot As JSON |
 | `/userinfo` | Show Your User Info |
 | `/ping` | Test Bot Latency |
@@ -113,11 +121,11 @@ Coolify Will Use The Health Endpoint `/healthz` To Verify The Service.
 
 ## DockerUsage
 
-Run The Production Image Locally (Port 3000):
+Run The Production Image Locally (Port 5860):
 
 ```bash
 docker build -t telegram-identity-bot .
-docker run -e TELEGRAM_BOT_TOKEN=YOUR_TOKEN -e WEBHOOK_URL=https://your-domain.com -e PORT=3000 -p 3000:3000 telegram-identity-bot
+docker run -e TELEGRAM_BOT_TOKEN=YOUR_TOKEN -e WEBHOOK_URL=https://your-domain.com -e PORT=5860 -p 5860:5860 telegram-identity-bot
 ```
 
 

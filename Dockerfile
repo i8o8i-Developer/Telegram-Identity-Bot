@@ -37,17 +37,17 @@ RUN mkdir -p /app/logs && chmod 755 /app/logs
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     APP_ENV=production \
-    PORT=3000 \
+    PORT=5860 \
     LOG_LEVEL=INFO \
-    WEBHOOK_URL=https://bot.durgaaisolutions.in
+    WEBHOOK_URL=
 
 RUN useradd --create-home --shell /bin/bash app && \
     chown -R app:app /app
 USER app
 
-EXPOSE 3000
+EXPOSE 5860
 
 HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=3 \
-    CMD curl -f http://127.0.0.1:3000/healthz || exit 1
+    CMD curl -f http://127.0.0.1:${PORT}/healthz || exit 1
 
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:3000", "--timeout", "120", "--keep-alive", "5", "Main:app"]
+CMD ["sh", "-c", "gunicorn -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT} --timeout 120 --keep-alive 5 Main:app"]

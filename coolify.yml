@@ -11,7 +11,7 @@ services:
       dockerfile: Dockerfile
     container_name: telegram-id-bot
     ports:
-      - "3000:3000"
+      - "5860:5860"
     environment:
       # Required Environment Variables
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -19,7 +19,7 @@ services:
       - WEBHOOK_DOMAIN=${WEBHOOK_DOMAIN:-your-domain.com}
       
       # Application Configuration
-      - PORT=3000
+      - PORT=5860
       - APP_ENV=production
       - LOG_LEVEL=INFO
       
@@ -35,7 +35,7 @@ services:
       
     # Health Check Configuration
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:5860/healthz"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -73,7 +73,7 @@ services:
       - "coolify.type=application"
       - "traefik.enable=true"
       - "traefik.http.routers.telegram-bot.rule=Host(`${WEBHOOK_DOMAIN:-your-domain.com}`)"
-      - "traefik.http.services.telegram-bot.loadbalancer.server.port=3000"
+      - "traefik.http.services.telegram-bot.loadbalancer.server.port=5860"
 
 networks:
   coolify:

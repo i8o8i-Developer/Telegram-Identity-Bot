@@ -8,10 +8,11 @@ import signal
 import sys
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional
+from urllib.parse import urlsplit
 
 try:
     from fastapi import FastAPI, HTTPException
-    from fastapi.responses import PlainTextResponse
+    from fastapi.responses import JSONResponse, PlainTextResponse
     from fastapi.middleware.cors import CORSMiddleware
     FASTAPI_AVAILABLE = True
 except Exception:
@@ -26,6 +27,11 @@ except Exception:
 
     class PlainTextResponse(str):
         pass
+
+    class JSONResponse(dict):
+        def __init__(self, content=None, status_code=200):
+            super().__init__(content or {})
+            self.status_code = status_code
 
     class CORSMiddleware:
         def __init__(self, *args, **kwargs):
@@ -207,11 +213,23 @@ log = setup_logging()
 
 # ---------- Developer Signature ----------
 SIGNATURE = os.getenv("BOT_SIGNATURE", "i8o8i Developer")
+APP_VERSION = "2.1.0"
+WEBHOOK_ENDPOINT = "/webhook"
+
+
+def build_webhook_url() -> str:
+    """Build A Stable Webhook URL From WEBHOOK_URL Environment Variable."""
+    base_url = WEBHOOK_BASE_URL.rstrip("/")
+    if not base_url:
+        return ""
+    if base_url.endswith(WEBHOOK_ENDPOINT):
+        return base_url
+    return f"{base_url}{WEBHOOK_ENDPOINT}"
 
 # ---------- Configuration And Validation ----------
 def validate_environment():
     """Validate Required Environment Variables"""
-    required_vars = ["TELEGRAM_BOT_TOKEN"]
+    required_vars = ["TELEGRAM_BOT_TOKEN", "WEBHOOK_URL"]
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
@@ -223,6 +241,11 @@ def validate_environment():
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token or len(bot_token.split(":")) != 2:
         raise RuntimeError("Invalid TELEGRAM_BOT_TOKEN Format")
+
+    webhook_url = build_webhook_url()
+    parsed_webhook_url = urlsplit(webhook_url)
+    if parsed_webhook_url.scheme not in ("http", "https") or not parsed_webhook_url.netloc:
+        raise RuntimeError("WEBHOOK_URL Must Be A Valid Absolute HTTP/HTTPS URL")
     
     log.info("Environment Validation Passed")
 
@@ -238,11 +261,11 @@ REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 # Calling The Telegram API. This Is Useful In Network-Restricted Environments Where
 # Outbound Access To Telegram May Be Blocked But You Still Want The Service To Be
 # Considered "Healthy" By The Orchestration Platform
-SKIP_TELEGRAM_HEALTH_CHECK = os.getenv("SKIP_TELEGRAM_HEALTH_CHECK", "false").lower() in ("1", "True", "Yes")
+SKIP_TELEGRAM_HEALTH_CHECK = os.getenv("SKIP_TELEGRAM_HEALTH_CHECK", "false").lower() in ("1", "true", "yes")
 
 # Sync With Docker/Coolify Defaults
-PORT = int(os.getenv("PORT", "3000"))
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://bot.durgaaisolutions.in")
+PORT = int(os.getenv("PORT", "5860"))
+WEBHOOK_BASE_URL = os.getenv("WEBHOOK_URL", "").strip()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 # ---------- Global State ----------
@@ -303,13 +326,17 @@ def handle_errors(func):
 @handle_errors
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🆔 Your ID", callback_data="id"), 
-         InlineKeyboardButton("💬 Chat/Group ID", callback_data="chatid")],
-        [InlineKeyboardButton("👑 Admins", callback_data="admins"), 
+        [InlineKeyboardButton("🆔 Your ID", callback_data="id"),
+         InlineKeyboardButton("↩️ Reply ID", callback_data="replyid")],
+        [InlineKeyboardButton("💬 Chat/Group ID", callback_data="chatid"),
+         InlineKeyboardButton("🏷️ Chat Details", callback_data="chatinfo")],
+        [InlineKeyboardButton("👑 Admins", callback_data="admins"),
          InlineKeyboardButton("👥 Member Count", callback_data="members")],
-        [InlineKeyboardButton("🧵 Topic ID", callback_data="topicid"), 
-         InlineKeyboardButton("ℹ️ User Info", callback_data="userinfo")],
-        [InlineKeyboardButton("📦 Export JSON", callback_data="export"), 
+        [InlineKeyboardButton("🧵 Topic ID", callback_data="topicid"),
+         InlineKeyboardButton("🧾 Message Info", callback_data="messageinfo")],
+        [InlineKeyboardButton("ℹ️ User Info", callback_data="userinfo"),
+         InlineKeyboardButton("🗂️ File ID", callback_data="fileid")],
+        [InlineKeyboardButton("📦 Export JSON", callback_data="export"),
          InlineKeyboardButton("🔍 Ping Test", callback_data="ping")],
         [InlineKeyboardButton("🆘 Help & Commands", callback_data="help")]
     ])
@@ -321,8 +348,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"👋 Hello <b>{user_name}</b>! I Can Help You Discover IDs and Chat Information.\n\n"
         f"✨ <b>Quick Actions:</b>\n"
         f"🆔 Get Your Telegram ID\n"
+        f"↩️ Extract IDs From Replied Messages\n"
         f"💬 Find Chat/Group IDs\n"
+        f"🏷️ Inspect Detailed Chat Metadata\n"
         f"🧵 Discover Topic IDs\n"
+        f"🧾 Capture Message IDs Instantly\n"
         f"👑 List Administrators\n"
         f"📊 Export Chat Data\n\n"
         f"📱 <i>Choose An Option Below Or Use Commands Directly!</i>"
@@ -339,12 +369,15 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🆘 <code>/help</code> — Display This Help\n\n"
         f"🔍 <b>ID Commands:</b>\n"
         f"🆔 <code>/id</code> — Your Telegram ID\n"
+        f"↩️ <code>/replyid</code> — ID Of Replied User / Sender Chat\n"
         f"💬 <code>/chatid</code> — Current Chat/Group ID\n"
+        f"🏷️ <code>/chatinfo</code> — Detailed Chat Metadata\n"
         f"🧵 <code>/topicid</code> — Topic ID (In Threads)\n\n"
         f"👥 <b>Group Info:</b>\n"
         f"📊 <code>/members</code> — Member Count\n"
         f"👑 <code>/admins</code> — List Administrators\n\n"
         f"📱 <b>Utilities:</b>\n"
+        f"🧾 <code>/messageid</code> — Message / Reply / Topic IDs\n"
         f"ℹ️ <code>/userinfo</code> — Detailed User Info\n"
         f"📦 <code>/export</code> — Export Chat Data (JSON)\n"
         f"🔍 <code>/ping</code> — Test Bot Response Time\n"
@@ -389,6 +422,109 @@ async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔢 <b>Chat ID:</b> <code>{c.id}</code>\n"
         f"📊 <b>Type:</b> {c.type.title()}\n\n"
         f"💡 <i>Tap The ID To Copy It!</i>", 
+        parse_mode="HTML"
+    )
+
+
+@handle_errors
+async def cmd_replyid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    replied_msg = msg.reply_to_message
+
+    if not replied_msg:
+        await msg.reply_text(
+            f"↩️ <b>Reply ID Finder</b>\n"
+            f"─────────────────────────\n\n"
+            f"❌ <b>No Reply Found</b>\n\n"
+            f"📱 Reply To Any User, Bot, Or Anonymous Admin Message\n"
+            f"🔄 Then Send <code>/replyid</code> Again\n\n"
+            f"💡 <i>This Is The Fastest Way To Capture Someone Else's ID!</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    sender = replied_msg.from_user
+    sender_chat = replied_msg.sender_chat
+    reply_to_message_id = replied_msg.reply_to_message.message_id if replied_msg.reply_to_message else None
+    topic_id = replied_msg.message_thread_id if replied_msg.is_topic_message else None
+
+    if sender:
+        username = f"@{sender.username}" if sender.username else "❌ No username"
+        await msg.reply_text(
+            f"↩️ <b>Reply Target Information</b>\n"
+            f"─────────────────────────\n\n"
+            f"👤 <b>Name:</b> {sender.full_name}\n"
+            f"🆔 <b>User ID:</b> <code>{sender.id}</code>\n"
+            f"📛 <b>Username:</b> {username}\n"
+            f"🤖 <b>Bot:</b> {'Yes' if sender.is_bot else 'No'}\n"
+            f"✉️ <b>Message ID:</b> <code>{replied_msg.message_id}</code>\n"
+            f"↩️ <b>Replying To:</b> <code>{reply_to_message_id}</code>\n"
+            f"🧵 <b>Topic ID:</b> <code>{topic_id}</code>\n\n"
+            f"💡 <i>Tap The Numeric IDs To Copy Them.</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    if sender_chat:
+        sender_chat_name = sender_chat.title or sender_chat.username or "Unknown"
+        await msg.reply_text(
+            f"↩️ <b>Sender Chat Information</b>\n"
+            f"─────────────────────────\n\n"
+            f"📢 <b>Name:</b> {sender_chat_name}\n"
+            f"🆔 <b>Chat ID:</b> <code>{sender_chat.id}</code>\n"
+            f"🏷️ <b>Type:</b> {sender_chat.type.title()}\n"
+            f"✉️ <b>Message ID:</b> <code>{replied_msg.message_id}</code>\n"
+            f"🧵 <b>Topic ID:</b> <code>{topic_id}</code>\n\n"
+            f"💡 <i>Useful For Anonymous Admin Or Channel-Linked Messages.</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    await msg.reply_text(
+        f"↩️ <b>Reply Target Information</b>\n"
+        f"─────────────────────────\n\n"
+        f"⚠️ <b>Sender Data Unavailable</b>\n\n"
+        f"Telegram Did Not Include User Or Sender Chat Details For That Message.\n"
+        f"✉️ <b>Message ID:</b> <code>{replied_msg.message_id}</code>\n\n"
+        f"💡 <i>Try Again With A Regular User Or Channel Message.</i>",
+        parse_mode="HTML"
+    )
+
+
+@handle_errors
+async def cmd_chatinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+
+    try:
+        full_chat = await context.bot.get_chat(chat.id)
+    except Exception:
+        full_chat = chat
+
+    try:
+        member_count = await context.bot.get_chat_member_count(chat.id)
+    except Exception:
+        member_count = None
+
+    chat_name = full_chat.title or full_chat.first_name or "Unknown"
+    username = f"@{full_chat.username}" if getattr(full_chat, "username", None) else "❌ No public username"
+    description = getattr(full_chat, "description", None) or getattr(full_chat, "bio", None) or "Not available"
+    invite_link = getattr(full_chat, "invite_link", None) or "Not available"
+    linked_chat_id = getattr(full_chat, "linked_chat_id", None)
+    member_line = f"👥 <b>Members:</b> <code>{member_count:,}</code>\n" if member_count is not None else ""
+    linked_chat_line = f"🔗 <b>Linked Chat ID:</b> <code>{linked_chat_id}</code>\n" if linked_chat_id else ""
+
+    await update.effective_message.reply_text(
+        f"🏷️ <b>Detailed Chat Info</b>\n"
+        f"─────────────────────────\n\n"
+        f"📝 <b>Name:</b> {chat_name}\n"
+        f"🆔 <b>Chat ID:</b> <code>{full_chat.id}</code>\n"
+        f"📊 <b>Type:</b> {full_chat.type.title()}\n"
+        f"📛 <b>Username:</b> {username}\n"
+        f"{member_line}"
+        f"{linked_chat_line}"
+        f"🧾 <b>Description:</b> {description}\n"
+        f"🔗 <b>Invite Link:</b> <code>{invite_link}</code>\n\n"
+        f"💡 <i>Handy For Group Setup, Migration, And Support Work.</i>",
         parse_mode="HTML"
     )
 
@@ -669,6 +805,27 @@ async def cmd_userinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.effective_message.reply_text(info, parse_mode="HTML")
 
+
+@handle_errors
+async def cmd_messageid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    chat = update.effective_chat
+    reply_to_message_id = msg.reply_to_message.message_id if msg.reply_to_message else "Not a reply"
+    topic_id = msg.message_thread_id if msg.is_topic_message else "Not in a topic"
+    sender_chat_id = msg.sender_chat.id if msg.sender_chat else "Not sent as chat"
+
+    await msg.reply_text(
+        f"🧾 <b>Message Information</b>\n"
+        f"─────────────────────────\n\n"
+        f"✉️ <b>Message ID:</b> <code>{msg.message_id}</code>\n"
+        f"💬 <b>Chat ID:</b> <code>{chat.id}</code>\n"
+        f"↩️ <b>Reply To ID:</b> <code>{reply_to_message_id}</code>\n"
+        f"🧵 <b>Topic ID:</b> <code>{topic_id}</code>\n"
+        f"📢 <b>Sender Chat ID:</b> <code>{sender_chat_id}</code>\n\n"
+        f"💡 <i>Useful For Topic Routing, Logging, And Bot Automations.</i>",
+        parse_mode="HTML"
+    )
+
 @handle_errors
 async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start = time.time()
@@ -720,6 +877,10 @@ async def cmd_fileid(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_id = replied_msg.photo[-1].file_id
             file_type = "🖼️ Photo"
             file_size = getattr(replied_msg.photo[-1], 'file_size', None)
+        elif replied_msg.animation:
+            file_id = replied_msg.animation.file_id
+            file_type = "🎞️ Animation"
+            file_size = getattr(replied_msg.animation, 'file_size', None)
         elif replied_msg.document:
             file_id = replied_msg.document.file_id
             file_type = f"📄 Document ({replied_msg.document.file_name or 'Unknown'})"
@@ -728,6 +889,10 @@ async def cmd_fileid(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_id = replied_msg.video.file_id
             file_type = "🎥 Video"
             file_size = getattr(replied_msg.video, 'file_size', None)
+        elif replied_msg.video_note:
+            file_id = replied_msg.video_note.file_id
+            file_type = "📹 Video Note"
+            file_size = getattr(replied_msg.video_note, 'file_size', None)
         elif replied_msg.audio:
             file_id = replied_msg.audio.file_id
             file_type = "🎵 Audio"
@@ -760,7 +925,8 @@ async def cmd_fileid(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"3️⃣ Get The Unique File ID!\n\n"
             f"🎯 <b>Supported Types:</b>\n"
             f"🖼️ Photos • 🎥 Videos • 📄 Documents\n"
-            f"🎭 Stickers • 🎵 Audio • 🎤 Voice\n\n"
+            f"🎭 Stickers • 🎵 Audio • 🎤 Voice\n"
+            f"🎞️ Animations • 📹 Video Notes\n\n"
             f"💡 <i>File IDs Never Expire!</i>",
             parse_mode="HTML"
         )
@@ -772,8 +938,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data == "id":
         await cmd_id(update, context)
+    elif data == "replyid":
+        await cmd_replyid(update, context)
     elif data == "chatid":
         await cmd_chatid(update, context)
+    elif data == "chatinfo":
+        await cmd_chatinfo(update, context)
     elif data == "admins":
         await cmd_admins(update, context)
     elif data == "members":
@@ -782,6 +952,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await cmd_export(update, context)
     elif data == "userinfo":
         await cmd_userinfo(update, context)
+    elif data == "messageinfo":
+        await cmd_messageid(update, context)
+    elif data == "fileid":
+        await cmd_fileid(update, context)
     elif data == "help":
         await help_cmd(update, context)
     elif data == "topicid":
@@ -796,12 +970,15 @@ def register_handlers(app: Application):
         CommandHandler("start", start),
         CommandHandler("help", help_cmd),
         CommandHandler("id", cmd_id),
+        CommandHandler("replyid", cmd_replyid),
         CommandHandler("chatid", cmd_chatid),
+        CommandHandler("chatinfo", cmd_chatinfo),
         CommandHandler("topicid", cmd_topicid),
         CommandHandler("members", cmd_members),
         CommandHandler("admins", cmd_admins),
         CommandHandler("export", cmd_export),
         CommandHandler("userinfo", cmd_userinfo),
+        CommandHandler("messageid", cmd_messageid),
         CommandHandler("ping", cmd_ping),
         CommandHandler("fileid", cmd_fileid),
         CallbackQueryHandler(on_callback),
@@ -817,10 +994,13 @@ def register_handlers(app: Application):
 async def lifespan(app: FastAPI):
     """Manage Application LifeSpan With Proper Startup and Shutdown"""
     global application
+    application_initialized = False
+    application_started = False
     
     try:
         # Startup
         log.info("🚀 Starting Telegram ID Bot...")
+        shutdown_event.clear()
 
         # Validate Environment (Moved Here So Import-Time Doesn't Fail When Env Is Missing)
         try:
@@ -846,26 +1026,29 @@ async def lifespan(app: FastAPI):
             .build()
         )
 
-        # Explicitly Disable Polling For Webhook Mode
-        if hasattr(application, 'updater') and application.updater:
-            application.updater = None
-
         # Register Handlers
         register_handlers(application)
 
-        # Initialize The Application (Don't Start Polling)
+        # Start The PTB Application In Webhook Mode Without Starting Polling.
         await application.initialize()
-        # Note: We Don't Call application.start() For Webhook Mode To Avoid Polling
+        application_initialized = True
+        await application.start()
+        application_started = True
 
         # Set Webhook With Error Handling
         try:
-            webhook_url = f"{WEBHOOK_URL.rstrip('/')}/webhook"
-            await application.bot.set_webhook(url=webhook_url)
+            webhook_url = build_webhook_url()
+            allowed_updates = getattr(Update, "ALL_TYPES", None)
+            webhook_kwargs = {"url": webhook_url, "drop_pending_updates": False}
+            if allowed_updates:
+                webhook_kwargs["allowed_updates"] = allowed_updates
+            await application.bot.set_webhook(**webhook_kwargs)
             log.info(f"✅ Webhook Set To: {webhook_url}")
         except Exception as webhook_error:
-            log.warning(f"⚠️ Failed To Set Webhook: {webhook_error}")
-            log.warning("⚠️ Bot Will Continue Without Webhook - Check WEBHOOK_URL Configuration")
-            # Don't Raise - Allow The Bot To Start Without Webhook For Development
+            log.exception(f"❌ Failed To Set Webhook: {webhook_error}")
+            if APP_ENV == "production":
+                raise RuntimeError("Webhook Registration Failed In Production") from webhook_error
+            log.warning("⚠️ Continuing Without Webhook Because APP_ENV Is Not Production")
 
         log.info(f"✅ Bot Started Successfully — Webhook Active On Port {PORT}")
 
@@ -884,17 +1067,14 @@ async def lifespan(app: FastAPI):
         # Ensure Application Cleanup
         if application:
             try:
-                # Remove Webhook On Shutdown
-                try:
-                    await application.bot.delete_webhook()
-                    log.info("✅ Webhook Removed")
-                except Exception as webhook_error:
-                    log.warning(f"⚠️ Error Removing Webhook: {webhook_error}")
-
-                # Since We Didn't Call application.start(), We Don't Call application.stop()
-                await application.shutdown()
+                if application_started:
+                    await application.stop()
+                if application_initialized:
+                    await application.shutdown()
             except Exception as e:
                 log.error(f"❌ Error During Application Shutdown: {e}")
+            finally:
+                application = None
         
         log.info("✅ Bot Shutdown Completed")
 
@@ -940,7 +1120,7 @@ async def health():
                 "status": "Healthy",
                 "bot_username": "webhook-mode",
                 "timestamp": time.time(),
-                "version": "2.0.0",
+                "version": APP_VERSION,
                 "note": "Webhook Mode - Telegram API Check Skipped For Stability"
             }
 
@@ -949,7 +1129,7 @@ async def health():
             "status": "Healthy",
             "bot_username": me.username,
             "timestamp": time.time(),
-            "version": "2.0.0"
+            "version": APP_VERSION
         }
     except Exception as e:
         # Return Degraded Status Rather Than Raising. This Prevents The Process From
@@ -961,7 +1141,7 @@ async def health():
             "reason": "Telegram_UnReachable",
             "error": str(e),
             "timestamp": time.time(),
-            "version": "2.0.0"
+            "version": APP_VERSION
         }
 
 @app.get("/metrics")
@@ -975,9 +1155,9 @@ async def metrics():
     try:
         return {
             "uptime": time.time(),
-            "bot_running": bool(application and not shutdown_event.is_set()),
+            "bot_running": bool(application and getattr(application, "running", False) and not shutdown_event.is_set()),
             "webhook_active": True,  # Webhook Is Always Active When App Is Running
-            "version": "2.0.0"
+            "version": APP_VERSION
         }
     except Exception as e:
         log.error(f"Metrics Collection Failed: {e}")
@@ -993,6 +1173,7 @@ async def status():
     
     try:
         me = await application.bot.get_me()
+        webhook_info = await application.bot.get_webhook_info()
         return {
             "status": "running",
             "bot_info": {
@@ -1004,37 +1185,81 @@ async def status():
                 "supports_inline_queries": me.supports_inline_queries,
             },
             "app_info": {
-                "version": "2.0.0",
+                "version": APP_VERSION,
                 "environment": APP_ENV,
                 "port": PORT,
                 "maintainer": SIGNATURE,
+            },
+            "webhook_info": {
+                "url": webhook_info.url or build_webhook_url(),
+                "pending_update_count": webhook_info.pending_update_count,
+                "max_connections": webhook_info.max_connections,
+                "ip_address": webhook_info.ip_address,
+                "allowed_updates": webhook_info.allowed_updates,
+                "last_error_date": webhook_info.last_error_date.isoformat() if webhook_info.last_error_date else None,
+                "last_error_message": webhook_info.last_error_message,
             },
             "system_info": {
                 "python_version": sys.version,
                 "timestamp": time.time(),
                 "shutdown_event_set": shutdown_event.is_set(),
-                "webhook_url": f"{WEBHOOK_URL.rstrip('/')}/webhook",
+                "webhook_url": build_webhook_url(),
             }
         }
     except Exception as e:
         log.error(f"Status Check Failed : {e}")
         return {"status": "error", "message": str(e)}
 
+
+@app.get("/webhook-info")
+async def webhook_info():
+    """Inspect The Registered Telegram Webhook For Deployment Debugging."""
+    global application
+
+    if not application:
+        return {"status": "not_initialized"}
+
+    try:
+        info = await application.bot.get_webhook_info()
+        return {
+            "status": "ok",
+            "configured_webhook_url": build_webhook_url(),
+            "telegram_webhook": {
+                "url": info.url,
+                "pending_update_count": info.pending_update_count,
+                "max_connections": info.max_connections,
+                "ip_address": info.ip_address,
+                "allowed_updates": info.allowed_updates,
+                "last_error_date": info.last_error_date.isoformat() if info.last_error_date else None,
+                "last_error_message": info.last_error_message,
+            },
+        }
+    except Exception as e:
+        log.error(f"Webhook Info Check Failed : {e}")
+        return {
+            "status": "error",
+            "configured_webhook_url": build_webhook_url(),
+            "message": str(e),
+        }
+
 # ---------- Error Handlers ----------
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    log.error(f"Global Exception: {exc}")
-    return {"error": "Internal Server Error", "timestamp": time.time()}
+    log.exception(f"Global Exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "timestamp": time.time()}
+    )
 
 # ---------- Webhook Endpoint ----------
-@app.post("/webhook")
+@app.post(WEBHOOK_ENDPOINT)
 async def webhook(update: Dict[str, Any]):
     """Handle Telegram Webhook Updates"""
     global application
     
     if not application:
         log.error("❌ Webhook Received But Application Not Initialized")
-        return {"error": "Application Not Initialized"}
+        raise HTTPException(status_code=503, detail="Application Not Initialized")
     
     try:
         # Convert Dict To Update Object
@@ -1045,8 +1270,8 @@ async def webhook(update: Dict[str, Any]):
         
         return {"status": "ok"}
     except Exception as e:
-        log.error(f"❌ Error Processing Webhook Update : {e}")
-        return {"error": "Failed To Process Update"}
+        log.exception(f"❌ Error Processing Webhook Update : {e}")
+        raise HTTPException(status_code=500, detail="Failed To Process Update") from e
 
 if __name__ == "__main__":
     try:

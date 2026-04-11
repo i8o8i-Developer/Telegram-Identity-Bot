@@ -4,11 +4,11 @@
 
 # ---------- Required Variables ----------
 TELEGRAM_BOT_TOKEN=""
-WEBHOOK_URL=https://bot.durgaaisolutions.in
+WEBHOOK_URL=https://identitybot.durgaaisolutions.in
 
 # ---------- Application Configuration ----------
 APP_ENV=production
-PORT=3000
+PORT=5860
 LOG_LEVEL=INFO
 
 # ---------- Bot Configuration ----------
